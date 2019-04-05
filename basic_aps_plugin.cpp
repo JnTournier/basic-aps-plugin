@@ -17,6 +17,13 @@
 
 /*! Duration to wait for Match_Descr_rsp frames after sending the request. */
 #define WAIT_MATCH_DESCR_RESP_TIMEOUT (10 * 1000)
+#define WAIT_SIMPLE_DESCR_RESP_TIMEOUT (10 * 1000)
+
+#define TM_PROFILE_ID 0x0402 /*! TM : Temperature measurement */
+#define HA_PROFILE_ID 0x0104 /*! HA : Home Automation         */
+#define DST_NODE      0x7dff /*! hardcode the @ destination   */
+//#define DST_NODE      0x3181 /*! hardcode the @ destination   */
+
 
 /*! Plugin constructor.
     \param parent - the parent object
@@ -66,6 +73,11 @@ void BasicApsPlugin::apsdeDataIndication(const deCONZ::ApsDataIndication &ind)
         if (ind.clusterId() == ZDP_MATCH_DESCRIPTOR_RSP_CLID)
         {
             handleMatchDescriptorResponse(ind);
+        }
+
+        else if (ind.clusterId() == ZDP_SIMPLE_DESCRIPTOR_RSP_CLID)
+        {
+            handleSimpleDescriptorResponse(ind);
         }
     }
 }
@@ -151,6 +163,56 @@ void BasicApsPlugin::handleMatchDescriptorResponse(const deCONZ::ApsDataIndicati
     }
 }
 
+
+/*! Handles a simple descriptor response.
+    \param ind a ZDP Simple_Descr_rsp
+ */
+void BasicApsPlugin::handleSimpleDescriptorResponse(const deCONZ::ApsDataIndication &ind)
+{
+
+    QDataStream stream(ind.asdu());
+    stream.setByteOrder(QDataStream::LittleEndian);
+
+    uint8_t zdpSeq;
+    uint8_t status;
+    uint16_t nwkAddrOfInterest;
+    uint8_t matchLength;
+    uint8_t endpoint;
+
+    stream >> zdpSeq;
+
+    // only handle the Match_Descr_rsp which belongs to our request
+    if (zdpSeq != m_simpleDescrZdpSeq)
+    {
+        return;
+    }
+
+    stream >> status;
+
+    DBG_Printf(DBG_INFO, "received simple descriptor response (id: %u) from %s\n", m_simpleDescrZdpSeq, qPrintable(ind.srcAddress().toStringExt()));
+
+    if (status == 0x00) // SUCCESS
+    {
+        stream >> nwkAddrOfInterest;
+        stream >> matchLength;
+
+        while (matchLength && !stream.atEnd())
+        {
+            matchLength--;
+            stream >> endpoint;
+            DBG_Printf(DBG_INFO, "\tsimple descriptor endpoint: 0x%02X\n", endpoint);
+        }
+
+        // done restart state machine
+        if (m_state == StateWaitSimpleDescriptorResponse)
+        {
+            setState(StateIdle);
+            m_timer->stop();
+            m_timer->start(IDLE_TIMEOUT);
+        }
+    }
+}
+
 /*! Handler for simple timeout timer.
  */
 void BasicApsPlugin::timerFired()
@@ -207,6 +269,58 @@ bool BasicApsPlugin::sendMatchDescriptorRequest()
     return false;
 }
 
+/*! Sends a ZDP Simple_Descr_req for cluster (ClusterID=0x0004).
+    \return true if request was added to queue
+ */
+bool BasicApsPlugin::sendSimpleDescriptorRequest()
+{
+    DBG_Assert(m_state == StateIdle);
+
+    if (m_apsCtrl->networkState() != deCONZ::InNetwork)
+    {
+        return false;
+    }
+
+    deCONZ::ApsDataRequest apsReq;
+
+    // set destination addressing
+    apsReq.setDstAddressMode(deCONZ::ApsNwkAddress);
+    apsReq.dstAddress().setNwk((quint16)DST_NODE);
+    apsReq.setDstEndpoint(ZDO_ENDPOINT);
+    apsReq.setSrcEndpoint(ZDO_ENDPOINT);
+    apsReq.setProfileId(ZDP_PROFILE_ID);
+    apsReq.setClusterId(ZDP_SIMPLE_DESCRIPTOR_CLID);
+
+    // prepare payload
+    QDataStream stream(&apsReq.asdu(), QIODevice::WriteOnly);
+    stream.setByteOrder(QDataStream::LittleEndian);
+
+    // generate and remember a new ZDP transaction sequence number
+    m_simpleDescrZdpSeq = (uint8_t)qrand();
+
+    // write payload according to ZigBee specification (2.4.3.1.7 Match_Descr_req)
+    // here we search for ZLL device which provides a OnOff server cluster
+    // NOTE: explicit castings ensure correct size of the fields
+    stream << m_simpleDescrZdpSeq; // ZDP transaction sequence number
+    //stream << (quint16)deCONZ::BroadcastRxOnWhenIdle; // NWKAddrOfInterest
+    stream << (quint16)DST_NODE; // NWKAddrOfInterest
+    // stream << (quint8)0x01; // NumInClusters
+    stream << (quint16)0x0001; // Simple Desc ClusterID
+    // //stream << (quint16)TM_PROFILE_ID; // Simple Desc ClusterID
+    // //stream << (quint16)TM_PROFILE_ID; // ClusterID
+    // stream << (quint8)0x00; // NumOutClusters
+
+
+    if (m_apsCtrl && (m_apsCtrl->apsdeDataRequest(apsReq) == deCONZ::Success))
+    {
+        // remember request
+        m_apsReqQueue.push_back(apsReq);
+        return true;
+    }
+
+    return false;
+}
+
 /*! Sets the state machine state.
     \param state the new state
  */
@@ -244,11 +358,17 @@ void BasicApsPlugin::stateMachineEventHandler(BasicApsPlugin::Event event)
         {
             m_apsReqQueue.clear();
 
-            if (sendMatchDescriptorRequest())
+            // if (sendMatchDescriptorRequest())
+            // {
+            //     DBG_Printf(DBG_INFO, "send match descriptor request (id: %u)\n", m_matchDescrZdpSeq);
+            //     setState(StateWaitMatchDescriptorResponse);
+            //     m_timer->start(WAIT_MATCH_DESCR_RESP_TIMEOUT);
+            // }
+	    if (sendSimpleDescriptorRequest())
             {
-                DBG_Printf(DBG_INFO, "send match descriptor request (id: %u)\n", m_matchDescrZdpSeq);
-                setState(StateWaitMatchDescriptorResponse);
-                m_timer->start(WAIT_MATCH_DESCR_RESP_TIMEOUT);
+                DBG_Printf(DBG_INFO, "send simple descriptor request (id: %u)\n", m_simpleDescrZdpSeq);
+                setState(StateWaitSimpleDescriptorResponse);
+                m_timer->start(WAIT_SIMPLE_DESCR_RESP_TIMEOUT);
             }
             else
             {
@@ -257,22 +377,43 @@ void BasicApsPlugin::stateMachineEventHandler(BasicApsPlugin::Event event)
             }
         }
     }
-    else if (m_state == StateWaitMatchDescriptorResponse)
+    // else if (m_state == StateWaitMatchDescriptorResponse)
+    // {
+    //     if (event == EventSendDone)
+    //     {
+    //         DBG_Printf(DBG_INFO, "send match descriptor request done (id: %u)\n", m_matchDescrZdpSeq);
+    //     }
+    //     else if (event == EventSendFailed)
+    //     {
+    //         DBG_Printf(DBG_INFO, "send match descriptor request failed (id: %u)\n", m_matchDescrZdpSeq);
+    //         // go back to idle state and wait some time
+    //         setState(StateIdle);
+    //         m_timer->start(IDLE_TIMEOUT);
+    //     }
+    //     else if (event == EventTimeout)
+    //     {
+    //         DBG_Printf(DBG_INFO, "stop wait for match descriptor response (id: %u)\n", m_matchDescrZdpSeq);
+    //         // go back to idle state and wait some time
+    //         setState(StateIdle);
+    //         m_timer->start(IDLE_TIMEOUT);
+    //     }
+    // }
+    else if (m_state == StateWaitSimpleDescriptorResponse)
     {
         if (event == EventSendDone)
         {
-            DBG_Printf(DBG_INFO, "send match descriptor request done (id: %u)\n", m_matchDescrZdpSeq);
+            DBG_Printf(DBG_INFO, "send simple descriptor request done (id: %u)\n", m_simpleDescrZdpSeq);
         }
         else if (event == EventSendFailed)
         {
-            DBG_Printf(DBG_INFO, "send match descriptor request failed (id: %u)\n", m_matchDescrZdpSeq);
+            DBG_Printf(DBG_INFO, "send simple descriptor request failed (id: %u)\n", m_simpleDescrZdpSeq);
             // go back to idle state and wait some time
             setState(StateIdle);
             m_timer->start(IDLE_TIMEOUT);
         }
         else if (event == EventTimeout)
         {
-            DBG_Printf(DBG_INFO, "stop wait for match descriptor response (id: %u)\n", m_matchDescrZdpSeq);
+            DBG_Printf(DBG_INFO, "stop wait for simple descriptor response (id: %u)\n", m_simpleDescrZdpSeq);
             // go back to idle state and wait some time
             setState(StateIdle);
             m_timer->start(IDLE_TIMEOUT);

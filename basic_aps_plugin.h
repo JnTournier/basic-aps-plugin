@@ -48,7 +48,8 @@ public:
     enum State
     {
         StateIdle,
-        StateWaitMatchDescriptorResponse
+        StateWaitMatchDescriptorResponse,
+	StateWaitSimpleDescriptorResponse
     };
 
     //!< State machine events
@@ -70,14 +71,17 @@ public Q_SLOTS:
     void apsdeDataIndication(const deCONZ::ApsDataIndication &ind);
     void apsdeDataConfirm(const deCONZ::ApsDataConfirm &conf);
     void handleMatchDescriptorResponse(const deCONZ::ApsDataIndication &ind);
+    void handleSimpleDescriptorResponse(const deCONZ::ApsDataIndication &ind);
     void timerFired();
     bool sendMatchDescriptorRequest();
+    bool sendSimpleDescriptorRequest();
     void setState(State state);
 
 private:
     State m_state; //!< current state machine state
     QTimer *m_timer; //!< common timer
     quint8 m_matchDescrZdpSeq; //!< ZDP transaction sequence number of Match_Descr_req
+    quint8 m_simpleDescrZdpSeq; //!< ZDP transaction sequence number of Simple_Descr_req
     std::list<deCONZ::ApsDataRequest> m_apsReqQueue; //!< queue of active APS requests
     deCONZ::ApsController *m_apsCtrl; //!< pointer to ApsController instance
 };
