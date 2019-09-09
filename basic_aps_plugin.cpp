@@ -652,7 +652,7 @@ const char *BasicApsPlugin::name()
     return "Basic APS Plugin";
 }
 
-/*! Execute a python script mainly use to run bluetooth functions.
+/*! Execute a python script mainly used to run bluetooth functions.
  */
 long int BasicApsPlugin::getTemp()
 {
@@ -668,9 +668,7 @@ long int BasicApsPlugin::getTemp()
     pModule = PyImport_Import(pName);
     Py_DECREF(pName);
 
-    //DBG_Printf(DBG_INFO, "Cannot find function \"%s\"\n", PyString_AsString(pModule));
-    DBG_Printf(DBG_INFO, "Je suis dans le module Python\n");
-    
+    //DBG_Printf(DBG_INFO, "Cannot find function \"%s\"\n", PyString_AsString(pModule));  
     
     if (pModule != NULL)
     {
@@ -728,12 +726,14 @@ long int BasicApsPlugin::getTemp()
  */
 void BasicApsPlugin::handleBTLEResponse()
 {
+    int tm_max = TM_MAX / 100;
+    int tm_min = TM_MIN / 100;
     // Handle temperature
     if (btle_temperature != -100) // We check if the var temperature is initialized 
     {
-
+	
 	// the temperature is good, not too cold not to hot
-	if (btle_temperature < TM_MAX && btle_temperature > TM_MIN)
+	if (btle_temperature < tm_max && btle_temperature > tm_min)
 	{
 	    return;
 	}
@@ -741,7 +741,7 @@ void BasicApsPlugin::handleBTLEResponse()
 	// We check the temperature and verify that the command has not been already sent
 	// cmd is False by default -> No command
 	// if cmd = true -> cmd on sent
-	if (btle_temperature < TM_MIN && !cmd)
+	if (btle_temperature < tm_min && !cmd)
 	{
 	    // We will send on command
 	    if (sendZCLReadAttributeRequest((quint16)ACT_NODE, ONOFF_COMMAND_ON, ONOFF_PROFILE_ID))
@@ -754,7 +754,7 @@ void BasicApsPlugin::handleBTLEResponse()
 	}
 	// The temperature is good and the command is still on
 	// Go send off command
-	if (btle_temperature > TM_MAX && cmd)
+	if (btle_temperature > tm_max && cmd)
 	{    
 	    if (sendZCLReadAttributeRequest((quint16)ACT_NODE, ONOFF_COMMAND_OFF, ONOFF_PROFILE_ID))
             {
