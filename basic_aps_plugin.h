@@ -49,7 +49,8 @@ public:
     {
         StateIdle,
         StateWaitMatchDescriptorResponse,
-	StateWaitSimpleDescriptorResponse
+	StateWaitSimpleDescriptorResponse,
+	StateBTLE
     };
 
     //!< State machine events
@@ -70,18 +71,26 @@ public Q_SLOTS:
     void stateMachineEventHandler(Event event);
     void apsdeDataIndication(const deCONZ::ApsDataIndication &ind);
     void apsdeDataConfirm(const deCONZ::ApsDataConfirm &conf);
+    void handleZCLReadAttributeResponse(const deCONZ::ApsDataIndication &ind, deCONZ::ZclFrame &zclFrame);
     void handleMatchDescriptorResponse(const deCONZ::ApsDataIndication &ind);
     void handleSimpleDescriptorResponse(const deCONZ::ApsDataIndication &ind);
+    void handleBTLEResponse();
     void timerFired();
+    bool sendZCLReadAttributeRequest(quint16 node, quint8 cmdId, quint16 clusterId);
     bool sendMatchDescriptorRequest();
     bool sendSimpleDescriptorRequest();
     void setState(State state);
+    long int getTemp();
 
 private:
     State m_state; //!< current state machine state
     QTimer *m_timer; //!< common timer
+    quint8 m_btle; //!< BTLE id that confirm the response
+    long int btle_temperature; //!< Temperature returned by the btle program
     quint8 m_matchDescrZdpSeq; //!< ZDP transaction sequence number of Match_Descr_req
     quint8 m_simpleDescrZdpSeq; //!< ZDP transaction sequence number of Simple_Descr_req
+    quint8 m_readAttributeZCLSeq;
+    bool cmd;
     std::list<deCONZ::ApsDataRequest> m_apsReqQueue; //!< queue of active APS requests
     deCONZ::ApsController *m_apsCtrl; //!< pointer to ApsController instance
 };

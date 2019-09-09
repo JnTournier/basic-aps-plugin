@@ -7,7 +7,7 @@ TARGET = $$qtLibraryTarget($$TARGET)
 DEFINES += DECONZ_DLLSPEC=Q_DECL_IMPORT
 
 win32:LIBS+=  -L../.. -ldeCONZ1
-unix:LIBS+=  -L../.. -ldeCONZ -lcrypt
+unix:LIBS+=  -L../.. -ldeCONZ -lcrypt -lpython2.7
 win32:CONFIG += dll
 
 TEMPLATE        = lib
@@ -17,7 +17,7 @@ CONFIG         += plugin \
 INCLUDEPATH    += ../.. \
                   ../../common
 
-unix:INCLUDEPATH += /usr/include
+#unix:INCLUDEPATH += /usr/include
 
 QMAKE_CXXFLAGS += -Wno-attributes
 
